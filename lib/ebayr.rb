@@ -87,7 +87,7 @@ module Ebayr
   #
   # The response is a Hash of the response, deserialized from the XML by
   # ActiveSupport's XML deserializer.
-  def self.call(call, arguments = {})
+  def self.call(call, arguments = {}, previous_result = nil)
     call = call.to_s
 
     auth_token = arguments.delete(:auth_token) || self.auth_token.to_s
@@ -154,9 +154,26 @@ module Ebayr
         when 'Failure' then logger.error(result['Errors'].inspect)
         else logger.fatal("Unknown Ack: #{result['Ack']}")
       end
+      result.merge(previous_result) if previous_result
+      if result["HasMore#{call}"]
+        result = paginate(call, result, arguments)
+      end
       return result
     else
       raise Exception.new("Unexpected response from server", request, response)
+    end
+  end
+
+  # Check the response for pagination.  If more pages exist, the call is
+  # repeated and the response added to the results hash until no pages remain.
+  def self.paginate(call, result, arguments)
+    total_pages ||= result["PaginationResult"]["TotalNumberOfPages"]
+    page_number = result["PageNumber"]
+    if page_number == total_pages
+      return result
+    else
+      arguments['Pagination']['PageNumber'] = page_number + 1
+      call(call, arguments, result)
     end
   end
 
@@ -166,7 +183,11 @@ module Ebayr
       result[k] = case v
         when Time then v.to_time.utc.iso8601
         else v
-      end
+        end
+    end
+    unless result['Pagination']
+      result['Pagination'] = {}
+      result['Pagination']['PageNumber'] = 1
     end
     result
   end

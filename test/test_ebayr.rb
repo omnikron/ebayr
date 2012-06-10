@@ -22,6 +22,7 @@ class TestEbayr < Test::Unit::TestCase
   end
 
   def test_ebayr_uris
+    Ebayr.sandbox = true
     assert_equal "https://api.sandbox.ebay.com/ws", Ebayr.uri_prefix
     assert_equal "https://blah.sandbox.ebay.com/ws", Ebayr.uri_prefix("blah")
     assert_equal "https://api.sandbox.ebay.com/ws/api.dll", Ebayr.uri.to_s
@@ -36,5 +37,22 @@ class TestEbayr < Test::Unit::TestCase
     converted = Ebayr.process_args(original)
     assert_equal original[:time].utc.iso8601, converted[:time]
     assert_equal original[:date].to_time.utc.iso8601, converted[:date]
+  end
+
+  def test_pagination_args_processing
+    no_page_given = {}
+    page_given = { 'Pagination' => { 'PageNumber' => 5 }} 
+    converted_no_page_given = Ebayr.process_args(no_page_given)
+    converted_page_given    = Ebayr.process_args(page_given)
+    assert_equal converted_no_page_given['Pagination']['PageNumber'], 1
+    assert_equal converted_page_given['Pagination']['PageNumber'], 5
+  end
+
+  def test_pagination_response
+    response = { :HasMoreOrders => true }
+    stub_ebay_call!(:GetOrders, response) do
+      @result = Ebayr.call(:GetOrders)
+    end
+      assert_equal @result['Pagination']['PageNumber'], 2
   end
 end
